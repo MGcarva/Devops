@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 REGION="us-east-1"
 CLUSTER_NAME="tienda-perritos"
@@ -70,19 +69,31 @@ CLUSTER_STATUS=$(aws eks describe-cluster --name $CLUSTER_NAME --region $REGION 
 if [ "$CLUSTER_STATUS" != "NOT_FOUND" ]; then
   echo "  [OK] Cluster ya existe con estado: $CLUSTER_STATUS"
 else
-  # Detectar la versión de Kubernetes soportada más reciente
-  K8S_VERSION=$(aws eks describe-addon-versions \
-    --region $REGION \
-    --query "addons[0].addonVersions[0].compatibilities[].clusterVersion" \
-    --output text | tr '\t' '\n' | sort -V | tail -1)
-  echo "  Versión K8s detectada: $K8S_VERSION"
-
-  aws eks create-cluster \
-    --name $CLUSTER_NAME \
-    --role-arn $LABROLE_ARN \
-    --resources-vpc-config subnetIds=${SUBNET_IDS},securityGroupIds=${SG_ID} \
-    --kubernetes-version $K8S_VERSION \
-    --region $REGION > /dev/null
+  # Probar versiones de K8s de más reciente a más antigua
+  K8S_VERSION=""
+  for TRY_VERSION in 1.33 1.32 1.31 1.30; do
+    echo "  Probando version K8s $TRY_VERSION..."
+    ERROR=$(aws eks create-cluster \
+      --name $CLUSTER_NAME \
+      --role-arn $LABROLE_ARN \
+      --resources-vpc-config subnetIds=${SUBNET_IDS},securityGroupIds=${SG_ID} \
+      --kubernetes-version $TRY_VERSION \
+      --region $REGION 2>&1)
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -eq 0 ]; then
+      K8S_VERSION=$TRY_VERSION
+      echo "  [OK] Cluster creado con version $TRY_VERSION"
+      break
+    elif echo "$ERROR" | grep -q "ResourceInUseException"; then
+      echo "  [OK] Cluster ya existe"
+      break
+    elif echo "$ERROR" | grep -q "unsupported Kubernetes version"; then
+      echo "  Version $TRY_VERSION no soportada, probando siguiente..."
+    else
+      echo "  Error inesperado: $ERROR"
+      break
+    fi
+  done
 
   echo "  Esperando que el cluster quede ACTIVE..."
   aws eks wait cluster-active --name $CLUSTER_NAME --region $REGION
