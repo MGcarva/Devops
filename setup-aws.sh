@@ -70,11 +70,18 @@ CLUSTER_STATUS=$(aws eks describe-cluster --name $CLUSTER_NAME --region $REGION 
 if [ "$CLUSTER_STATUS" != "NOT_FOUND" ]; then
   echo "  [OK] Cluster ya existe con estado: $CLUSTER_STATUS"
 else
+  # Detectar la versión de Kubernetes soportada más reciente
+  K8S_VERSION=$(aws eks describe-addon-versions \
+    --region $REGION \
+    --query "addons[0].addonVersions[0].compatibilities[].clusterVersion" \
+    --output text | tr '\t' '\n' | sort -V | tail -1)
+  echo "  Versión K8s detectada: $K8S_VERSION"
+
   aws eks create-cluster \
     --name $CLUSTER_NAME \
     --role-arn $LABROLE_ARN \
     --resources-vpc-config subnetIds=${SUBNET_IDS},securityGroupIds=${SG_ID} \
-    --kubernetes-version "1.29" \
+    --kubernetes-version $K8S_VERSION \
     --region $REGION > /dev/null
 
   echo "  Esperando que el cluster quede ACTIVE..."
