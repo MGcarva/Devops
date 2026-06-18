@@ -23,9 +23,10 @@ VPC_ID=$(aws ec2 describe-vpcs \
   --region $REGION)
 echo "VPC default : $VPC_ID"
 
-# Obtener subnets de la VPC default (todas)
+# Obtener subnets excluyendo us-east-1e (no soportada por EKS control plane)
 SUBNET_IDS=$(aws ec2 describe-subnets \
   --filters "Name=vpc-id,Values=$VPC_ID" \
+             "Name=availabilityZone,Values=us-east-1a,us-east-1b,us-east-1c,us-east-1d,us-east-1f" \
   --query "Subnets[*].SubnetId" \
   --output text \
   --region $REGION | tr '\t' ',')
@@ -70,7 +71,7 @@ if [ "$CLUSTER_STATUS" != "NOT_FOUND" ]; then
   echo "  [OK] Cluster ya existe con estado: $CLUSTER_STATUS"
 else
   # Probar versiones de K8s de más reciente a más antigua
-  K8S_VERSION=""
+  CLUSTER_CREATED=false
   for TRY_VERSION in 1.33 1.32 1.31 1.30; do
     echo "  Probando version K8s $TRY_VERSION..."
     ERROR=$(aws eks create-cluster \
@@ -81,19 +82,22 @@ else
       --region $REGION 2>&1)
     EXIT_CODE=$?
     if [ $EXIT_CODE -eq 0 ]; then
-      K8S_VERSION=$TRY_VERSION
       echo "  [OK] Cluster creado con version $TRY_VERSION"
-      break
-    elif echo "$ERROR" | grep -q "ResourceInUseException"; then
-      echo "  [OK] Cluster ya existe"
+      CLUSTER_CREATED=true
       break
     elif echo "$ERROR" | grep -q "unsupported Kubernetes version"; then
       echo "  Version $TRY_VERSION no soportada, probando siguiente..."
     else
-      echo "  Error inesperado: $ERROR"
-      break
+      echo "  Error: $ERROR"
+      echo "  [FALLO] No se pudo crear el cluster. Revisa el error arriba."
+      exit 1
     fi
   done
+
+  if [ "$CLUSTER_CREATED" = false ]; then
+    echo "  [FALLO] Ninguna version K8s fue aceptada."
+    exit 1
+  fi
 
   echo "  Esperando que el cluster quede ACTIVE..."
   aws eks wait cluster-active --name $CLUSTER_NAME --region $REGION
