@@ -2,6 +2,10 @@
 
 Aplicación de 3 servicios (Frontend Nginx, Backend Node.js, MySQL) desplegada en Amazon EKS con pipeline CI/CD via GitHub Actions.
 
+> **IMPORTANTE — AWS Academy borra todo al cerrar el lab.**
+> Cada sesión debes recrear el cluster EKS, el node group y actualizar los secrets de GitHub.
+> Sigue esta guía de principio a fin cada vez que inicies el lab.
+
 ---
 
 ## Datos fijos de tu infraestructura
@@ -14,84 +18,49 @@ Aplicación de 3 servicios (Frontend Nginx, Backend Node.js, MySQL) desplegada e
 | Namespace K8s | `tienda` |
 | ECR Registry | `528853233991.dkr.ecr.us-east-1.amazonaws.com` |
 | VPC | `vpc-07b79e673fd807ded` |
+| LabRole ARN | `arn:aws:iam::528853233991:role/LabRole` |
 
 ---
 
-## Guía completa para cada nueva sesión de AWS Academy
-
-> Las credenciales del Learner Lab **expiran cada vez que apagas el lab**.
-> Cada vez que vuelvas debes repetir los pasos 1 y 6.
-> Los pasos 2–5 solo se hacen una vez (la infraestructura persiste mientras no borres los recursos).
-
----
+## Guía completa — Ejecutar cada sesión desde cero
 
 ### PASO 1 — Iniciar el lab y obtener credenciales
 
 1. Entra a **AWS Academy Learner Lab**
 2. Clic en **Start Lab** — espera que el círculo quede **verde**
-3. Clic en **AWS Details** → **Show** (junto a AWS CLI)
-4. Copia los 3 valores:
+3. Clic en **AWS** para abrir la consola AWS
+4. Clic en **AWS Details** → **Show** (junto a AWS CLI)
+5. Copia los 3 valores (los necesitas en el Paso 5):
    - `AWS_ACCESS_KEY_ID`
    - `AWS_SECRET_ACCESS_KEY`
    - `AWS_SESSION_TOKEN`
 
 ---
 
-### PASO 2 — Verificar que el cluster EKS existe
+### PASO 2 — Abrir CloudShell
 
-Abre **CloudShell** (ícono `>_` en la barra superior de la consola AWS) y ejecuta:
+Desde la consola AWS, clic en el ícono de terminal **`>_`** en la barra superior derecha.
+
+Espera que CloudShell cargue y verás el prompt `~ $`.
+
+---
+
+### PASO 3 — Crear repositorios ECR
+
+Los repos ECR **a veces persisten** entre sesiones. Este script los crea si no existen y los omite si ya están:
 
 ```bash
 curl -s https://raw.githubusercontent.com/MGcarva/Devops/main/scripts/1-variables.sh | bash
 ```
 
-Luego verifica el cluster:
-
-```bash
-aws eks describe-cluster --name tienda-perritos --region us-east-1 --query "cluster.status" --output text
+Deberías ver:
+```
+Account : 528853233991
+LabRole : arn:aws:iam::528853233991:role/LabRole
+SG      : sg-094feca72414e1c29
 ```
 
-- Si responde `ACTIVE` → el cluster ya existe, salta al **Paso 6**
-- Si responde `No cluster found` → el cluster fue eliminado, ejecuta los pasos 3, 4 y 5
-
----
-
-### PASO 3 — Recrear el cluster EKS (solo si fue eliminado)
-
-En CloudShell:
-
-```bash
-curl -s https://raw.githubusercontent.com/MGcarva/Devops/main/scripts/2-crear-cluster.sh | bash
-```
-
-> Tarda aproximadamente **15 minutos**. No cierres CloudShell.
-> Cuando termine imprime: `CLUSTER LISTO - Ahora ejecuta el script 3`
-
----
-
-### PASO 4 — Recrear el Node Group (solo si fue eliminado)
-
-Ejecuta este script **después** de que el Paso 3 diga CLUSTER LISTO:
-
-```bash
-curl -s https://raw.githubusercontent.com/MGcarva/Devops/main/scripts/3-crear-nodegroup.sh | bash
-```
-
-> Tarda aproximadamente **5 minutos**.
-> Cuando termine imprime: `TODO LISTO`
-
----
-
-### PASO 5 — Verificar ECR (solo si fue eliminado)
-
-Los repositorios ECR normalmente persisten. Para verificar:
-
-```bash
-aws ecr describe-repositories --region us-east-1 --query "repositories[*].repositoryName" --output table
-```
-
-Si no aparecen `tienda-frontend`, `tienda-backend`, `tienda-db`, créalos:
-
+Si los repos ECR fueron eliminados, créalos manualmente:
 ```bash
 aws ecr create-repository --repository-name tienda-frontend --region us-east-1
 aws ecr create-repository --repository-name tienda-backend  --region us-east-1
@@ -100,28 +69,63 @@ aws ecr create-repository --repository-name tienda-db       --region us-east-1
 
 ---
 
-### PASO 6 — Actualizar secrets en GitHub y disparar el pipeline
+### PASO 4 — Crear el cluster EKS
 
-> Este paso se repite **cada sesión** porque las credenciales AWS Academy expiran.
+```bash
+curl -s https://raw.githubusercontent.com/MGcarva/Devops/main/scripts/2-crear-cluster.sh | bash
+```
 
-#### 6.1 — Actualizar los secrets en GitHub
+- Cuando aparezca el JSON con `"status": "CREATING"`, presiona **`q`** para salir del paginador
+- El script quedará esperando con el mensaje: `Esperando que el cluster quede ACTIVE (~15 min)...`
+- **No cierres CloudShell**, espera hasta ver:
+
+```
+============================================
+ CLUSTER LISTO - Ahora ejecuta el script 3
+============================================
+```
+
+---
+
+### PASO 5 — Crear el Node Group
+
+Ejecuta este comando **inmediatamente después** de que el Paso 4 diga CLUSTER LISTO:
+
+```bash
+curl -s https://raw.githubusercontent.com/MGcarva/Devops/main/scripts/3-crear-nodegroup.sh | bash
+```
+
+- Presiona **`q`** si aparece el paginador JSON
+- Espera hasta ver:
+
+```
+============================================
+ TODO LISTO
+============================================
+```
+
+---
+
+### PASO 6 — Actualizar secrets en GitHub
 
 Ve a: **github.com/MGcarva/Devops → Settings → Secrets and variables → Actions**
 
-Actualiza (o crea si es la primera vez) estos 6 secrets:
+Para cada secret: clic en el lápiz (editar) e ingresa el nuevo valor.
 
-| Secret | Valor |
-|--------|-------|
-| `AWS_ACCESS_KEY_ID` | Del botón AWS Details del lab |
-| `AWS_SECRET_ACCESS_KEY` | Del botón AWS Details del lab |
-| `AWS_SESSION_TOKEN` | Del botón AWS Details del lab |
-| `AWS_REGION` | `us-east-1` |
-| `EKS_CLUSTER_NAME` | `tienda-perritos` |
-| `EKS_NAMESPACE` | `tienda` |
+| Secret | Valor | Dónde obtenerlo |
+|--------|-------|-----------------|
+| `AWS_ACCESS_KEY_ID` | El valor copiado en Paso 1 | AWS Details del lab |
+| `AWS_SECRET_ACCESS_KEY` | El valor copiado en Paso 1 | AWS Details del lab |
+| `AWS_SESSION_TOKEN` | El valor copiado en Paso 1 | AWS Details del lab |
+| `AWS_REGION` | `us-east-1` | Fijo, no cambia |
+| `EKS_CLUSTER_NAME` | `tienda-perritos` | Fijo, no cambia |
+| `EKS_NAMESPACE` | `tienda` | Fijo, no cambia |
 
-#### 6.2 — Disparar el pipeline
+---
 
-Desde tu computador, en la carpeta del proyecto:
+### PASO 7 — Disparar el pipeline
+
+Desde tu computador, en la carpeta del proyecto (PowerShell o Git Bash):
 
 ```bash
 cd "C:\Users\ghonc\Downloads\3.6.3 APP tienda-perritos-EKS_GITHUB"
@@ -129,79 +133,90 @@ git commit --allow-empty -m "trigger: activar pipeline"
 git push
 ```
 
-El pipeline se activa automáticamente con cada push a `main`.
+Monitorea el progreso en: **github.com/MGcarva/Devops → Actions**
 
-#### 6.3 — Monitorear el pipeline
-
-Ve a: **github.com/MGcarva/Devops → Actions**
-
-Verás el pipeline ejecutando estos pasos en orden:
+El pipeline ejecuta estos pasos en orden:
 1. Checkout código
 2. Configurar credenciales AWS
 3. Login a ECR
-4. Build & push Frontend → ECR
-5. Build & push Backend → ECR
-6. Build & push DB → ECR
-7. Instalar kubectl
-8. Configurar kubeconfig para EKS
-9. Aplicar manifests (namespace, DB, servicios)
-10. Desplegar Backend en EKS
-11. Desplegar Frontend en EKS
-12. Aplicar HPA
-13. Ver pods y servicios finales
+4. Build y push de los 3 contenedores a ECR
+5. Configurar kubeconfig para EKS
+6. Aplicar manifests de Kubernetes (namespace, DB, backend, frontend)
+7. Actualizar imágenes en los deployments
+8. Mostrar estado final de pods y servicios
 
 > El pipeline completo tarda aproximadamente **5–10 minutos**.
 
-#### 6.4 — Obtener la URL pública
+---
 
-Cuando el pipeline termine, en CloudShell:
+### PASO 8 — Obtener la URL pública
+
+Cuando el pipeline termine, en CloudShell ejecuta:
 
 ```bash
 aws eks update-kubeconfig --region us-east-1 --name tienda-perritos
 kubectl get svc -n tienda
 ```
 
-La columna `EXTERNAL-IP` del servicio `tienda-frontend` es la URL pública de la aplicación.
-Puede tardar 2–3 minutos en propagarse después del despliegue.
+Busca el servicio `tienda-frontend` y copia el valor de la columna `EXTERNAL-IP`.
+Esa es la URL pública de la aplicación. Puede tardar 2–3 minutos en aparecer.
 
 ---
 
-## Arquitectura del proyecto
+## Resumen de comandos CloudShell (copiar y pegar en orden)
+
+```bash
+# PASO 3 — Verificar variables y ECR
+curl -s https://raw.githubusercontent.com/MGcarva/Devops/main/scripts/1-variables.sh | bash
+
+# PASO 4 — Crear cluster EKS (~15 min, presiona q en el paginador)
+curl -s https://raw.githubusercontent.com/MGcarva/Devops/main/scripts/2-crear-cluster.sh | bash
+
+# PASO 5 — Crear node group (~5 min, solo después de ver CLUSTER LISTO)
+curl -s https://raw.githubusercontent.com/MGcarva/Devops/main/scripts/3-crear-nodegroup.sh | bash
+
+# PASO 8 — Ver URL pública (después del pipeline)
+aws eks update-kubeconfig --region us-east-1 --name tienda-perritos
+kubectl get svc -n tienda
+```
+
+---
+
+## Arquitectura
 
 ```
-┌─────────────────────────────────────────────┐
-│              GitHub Actions                  │
-│  push a main → build → push ECR → deploy    │
-└─────────────────┬───────────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────────┐
-│           Amazon ECR                         │
-│  tienda-frontend | tienda-backend | tienda-db│
-└─────────────────┬───────────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────────┐
-│           Amazon EKS (tienda-perritos)       │
-│  Namespace: tienda                           │
-│                                              │
-│  [Frontend :80] → [Backend :3001] → [MySQL]  │
-│       (x2 pods)       (x2 pods)    (x1 pod)  │
-└─────────────────────────────────────────────┘
+GitHub push a main
+        │
+        ▼
+GitHub Actions (deploy-eks.yml)
+        │
+        ├── Build imágenes Docker
+        ├── Push a Amazon ECR
+        │       ├── tienda-frontend
+        │       ├── tienda-backend
+        │       └── tienda-db
+        │
+        └── Deploy a Amazon EKS
+                Namespace: tienda
+                ├── tienda-frontend  :80   (2 pods, LoadBalancer público)
+                ├── tienda-backend   :3001 (2 pods, ClusterIP interno)
+                └── tienda-db        :3306 (1 pod,  ClusterIP interno)
 ```
+
+---
 
 ## Estructura de archivos
 
 ```
 .
 ├── .github/workflows/
-│   └── deploy-eks.yml        # Pipeline CI/CD completo
-├── frontend/                 # Nginx + HTML/JS
-├── backend/                  # Node.js Express API
-├── db/                       # MySQL con init.sql
-├── k8s/                      # Manifests Kubernetes
+│   └── deploy-eks.yml          # Pipeline CI/CD
+├── frontend/                   # Nginx + HTML/JS
+├── backend/                    # Node.js API (puerto 3001)
+├── db/                         # MySQL + init.sql
+├── k8s/                        # Manifests Kubernetes
 │   ├── namespace.yaml
-│   ├── mysql-secret.yaml     # Password: admin123 (base64)
+│   ├── mysql-secret.yaml       # Password BD: admin123
 │   ├── mysql-deployment.yaml
 │   ├── mysql-service.yaml
 │   ├── backend-deployment.yaml
@@ -210,18 +225,21 @@ Puede tardar 2–3 minutos en propagarse después del despliegue.
 │   ├── frontend-deployment.yaml
 │   ├── frontend-service.yaml
 │   └── frontend-hpa.yaml
-└── scripts/                  # Scripts de setup AWS
-    ├── 1-variables.sh        # Verificar variables del lab
-    ├── 2-crear-cluster.sh    # Crear cluster EKS
-    └── 3-crear-nodegroup.sh  # Crear node group
+└── scripts/                    # Scripts de setup
+    ├── 1-variables.sh          # Verifica Account ID y SG
+    ├── 2-crear-cluster.sh      # Crea cluster EKS
+    └── 3-crear-nodegroup.sh    # Crea node group con 2 nodos t3.medium
 ```
 
 ---
 
-## Resolución de problemas comunes
+## Resolución de problemas
 
-### El pipeline falla en "Configurar kubeconfig para EKS"
-Las credenciales AWS expiraron. Actualiza los 3 secrets de AWS en GitHub (Paso 6.1).
+### Pipeline falla en "Configurar credenciales AWS"
+Las credenciales expiraron. Actualiza los 3 secrets de AWS en GitHub (Paso 6).
+
+### Pipeline falla en "Configurar kubeconfig para EKS"
+El cluster no existe o las credenciales son incorrectas. Verifica que completaste los Pasos 4 y 6.
 
 ### Los pods quedan en CrashLoopBackOff
 ```bash
